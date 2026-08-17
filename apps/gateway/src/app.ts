@@ -40,6 +40,7 @@ import { type ScanCredentials, scanCredentialsSchema } from '@corvid/tool-contra
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { zValidator } from '@hono/zod-validator';
 import { type Context, Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { rateLimiter, type Store } from 'hono-rate-limiter';
 import * as z from 'zod';
@@ -81,6 +82,14 @@ export interface AppDeps {
    * falls back to its in-memory store — correct for a single instance, per-process across many.
    */
   readonly rateLimitStore?: (prefix: string) => Store<AppEnv>;
+  /**
+   * Origins the dashboard is served from, for cross-origin browser auth/data calls (derived from
+   * TRUSTED_ORIGINS in the composition root). When set, a CORS middleware reflects exactly these
+   * origins with credentials enabled — Better Auth's `trustedOrigins` handles CSRF/redirect trust
+   * but does NOT emit the HTTP CORS headers a browser requires, so without this the dashboard on a
+   * different origin cannot make any credentialed call. Absent → same-origin only (no CORS headers).
+   */
+  readonly allowedOrigins?: readonly string[];
   /**
    * IO ports for D-7 proof-of-control verification (DNS + a redirect-refusing HTTPS GET). Injected
    * so the gateway stays testable offline; the composition root wires node:dns/promises + fetch.
@@ -162,6 +171,23 @@ function toAuditEntry(a: AuditRow) {
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+
+  // Cross-origin support for a dashboard served from a different origin (dev: :3024 → gateway :8787).
+  // Registered before every route so the preflight OPTIONS is answered here and never falls through
+  // to the auth guard (which would 401 it). Only the configured origins are reflected — never `*`,
+  // which credentials-mode forbids anyway — so this widens nothing beyond the trusted dashboard.
+  if (deps.allowedOrigins !== undefined && deps.allowedOrigins.length > 0) {
+    const allowed = new Set(deps.allowedOrigins);
+    app.use(
+      '/api/*',
+      cors({
+        origin: (origin) => (allowed.has(origin) ? origin : null),
+        credentials: true,
+        allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+        allowHeaders: ['content-type'],
+      }),
+    );
+  }
 
   // Public auth surface (Better Auth owns sign-up/sign-in/session). It's the one endpoint an
   // unauthenticated attacker can reach, so it gets its own IP-keyed rate limit (ADR-20) — the

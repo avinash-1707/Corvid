@@ -164,6 +164,8 @@ const app = createApp({
   encryptCredentials: (credentials) => credentialCipher.encrypt(JSON.stringify(credentials)),
   scanRuntime,
   ...(rateLimitStore !== undefined ? { rateLimitStore } : {}),
+  // Same list Better Auth trusts (CSRF/redirect) is what the browser is allowed to call cross-origin.
+  ...(trustedOrigins !== undefined && trustedOrigins.length > 0 ? { allowedOrigins: trustedOrigins } : {}),
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
