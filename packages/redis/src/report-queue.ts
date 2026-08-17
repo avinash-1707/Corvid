@@ -7,7 +7,10 @@ import type { Redis } from 'ioredis';
 // and restarting the worker loses no report. The finding is already durable in Postgres before this
 // enqueue (ADR-17 invariant) — the queue never holds the only copy of anything.
 
-export const REPORT_QUEUE = 'corvid:reports';
+// BullMQ forbids `:` in a queue name (it's the Redis key separator), so this is hyphenated, not
+// `corvid:reports`. Both the producer (createReportQueue) and the worker read this one constant, so
+// they can never drift apart.
+export const REPORT_QUEUE = 'corvid-reports';
 
 /**
  * Idempotent per-scan job id. Custom BullMQ job ids must not contain `:` (its Redis key separator)
